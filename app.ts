@@ -69,6 +69,18 @@ bot.callbackQuery(/^reply:(\d+):(\d+)$/, async (ctx) => {
         return ctx.answerCallbackQuery("非管理员");
     }
     try {
+        const old = await kv.get<
+            ReplyContext & { promptMsgId : number }
+        >(["reply_context",admin_id]);
+        if(old.value){
+            try{
+                await bot.api.deleteMessage(
+                    admin_id,
+                    old.value.promptMsgId
+                );
+            }catch {}
+            await kv.delete(["reply_context",admin_id]);
+        }
         const parts = ctx.match[0].split(':');
         const userChatId = parseInt(parts[1]);
 
@@ -184,12 +196,12 @@ bot.on("message", async (ctx) => {
             try {
                 const context: ReplyContext = { targetUserId: targetUserId };
                 await kv.set(["reply_text", admin_id], context, { expireIn: active });
-                await kv.set(["active", targetUserId], { admin: admin_id });
+                await kv.set(["active", targetUserId], { admin: admin_id },{expireIn : active });
                 await bot.api.sendMessage(targetUserId, replyText, { parse_mode: "Markdown" });
 
                 await kv.set(["active_chat", targetUserId], { adminId: admin_id }, { expireIn: active });
+                await kv.delete(["force_exit",targetUserId]);
 
-                await bot.api.deleteMessage(admin_id, msgId).catch(console.error);
                 await bot.api.deleteMessage(admin_id,promptMsgId).catch(console.error);
 
                 await kv.delete(["reply_context", admin_id]);
@@ -230,7 +242,7 @@ bot.on("message", async (ctx) => {
         if(isRequest){
             await kv.delete(["force_exit",userId]);
         }
-        
+
         const messageToAdmin = isChatActive || isRequest;
 
         if (!messageToAdmin && isWait) {
