@@ -72,9 +72,12 @@ bot.callbackQuery(/^reply:(\d+):(\d+)$/, async (ctx) => {
         const parts = ctx.match[0].split(':');
         const userChatId = parseInt(parts[1]);
 
-        const context: ReplyContext = { targetUserId: userChatId };
+        // const context: ReplyContext = { targetUserId: userChatId };
+        const context : ReplyContext & { msgId : number } = {
+            targetUserId: userChatId,
+            msgId: ctx.callbackQuery.message!.message_id
+        }
         await kv.set(["reply_context", admin_id], context, { expireIn: active });
-        // await kv.set(["active_chat", userChatId], { adminId: admin_id }, { expireIn: active });
 
         const replyInstruction = `回复消息：`;
 
@@ -102,9 +105,10 @@ bot.callbackQuery("cancel_reply", async (ctx) => {
         if (targetUserId) {
             await kv.delete(["active_chat", targetUserId]);
         }
+        await ctx.deleteMessage();
         await ctx.answerCallbackQuery("退出回复");
     } catch (error) {
-        console.error(error);
+        console.error("取消回复失败:", error);
         await ctx.answerCallbackQuery("取消回复失败");
     }
 });
@@ -160,9 +164,9 @@ bot.on("message", async (ctx) => {
 
     // 处理管理员消息
     if (userId == admin_id) {
-        const contextResult = await kv.get<ReplyContext>(['reply_context', admin_id]);
+        const contextResult = await kv.get<ReplyContext & { msgId : number }>(['reply_context', admin_id]);
         if (contextResult.value) {
-            const targetUserId = contextResult.value.targetUserId;
+            const { targetUserId , msgId }  = contextResult.value;
             const replyText = `${ctx.message.text}`;
 
             try {
@@ -172,6 +176,9 @@ bot.on("message", async (ctx) => {
                 await bot.api.sendMessage(targetUserId, replyText, { parse_mode: "Markdown" });
 
                 await kv.set(["active_chat", targetUserId], { adminId: admin_id }, { expireIn: active });
+
+                await bot.api.deleteMessage(admin_id, msgId).catch(console.error);
+
                 await kv.delete(["reply_context", admin_id]);
                 await ctx.reply(`已发送至用户`, { reply_to_message_id: ctx.message.message_id });
                 return;
